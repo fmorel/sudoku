@@ -1,0 +1,15 @@
+Benchmark
+sudoku.txt sudoku2.txt sudoku3.txt
+sudoku.txt : 540
+sudoku2.txt : 557
+sudoku3.txt : 1264
+Benchmark
+sudoku.txt sudoku2.txt sudoku3.txt
+sudoku.txt : 546
+sudoku2.txt : 612
+sudoku3.txt : 1251
+Benchmark
+sudoku.txt sudoku2.txt sudoku3.txt
+sudoku.txt : 541
+sudoku2.txt : 558
+sudoku3.txt : 1255
