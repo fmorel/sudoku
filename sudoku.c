@@ -104,31 +104,20 @@ bool removeValueFromCell(Cell *cell, int value)
 	return false;
 }
 
-bool isSubset(Cell *a, Cell *b)
-{
-	int i,j;
-	bool ok = true;
-	bool found;
-	for (i=0; i < a->nbValues; i++) {
-		found = false;
-		for (j=0; j < b->nbValues; j++) {
-			if (a->values[i] == b->values[j]) {
-				found = true;
-				break;
-			}
-		}
-		if (!found) {
-			ok =false;
-			break;
-		}
-	}
-
-	return ok;
-}
 
 bool isEqual(Cell *a, Cell *b)
 {
-	return (isSubset(a,b) && isSubset(b,a));
+	//Values should be ordered so we can speed up the process
+	bool equal = true;
+	int i,j=0;
+	if (a->nbValues != b->nbValues)
+		return false;
+	for (i=0; i<a->nbValues; i++) {
+		equal = equal && (a->values[i] == b->values[i]);
+		if(!equal)
+			break;
+	}
+	return equal;
 }
 
 bool isSolved(void)
@@ -331,17 +320,18 @@ int main(int argc, char **argv)
 			printf("Sudoku solved : \n");
 			gridOutput();
 			break;
-		} else {
+		} else if (!error) {
 			printf("Pass %d is not sufficient, need hypothesis ...\nCurrent state is:\n", stackDepth+1);
 			gridOutput();
 		}
 
 		//Hypothesis
-		if (error)
+		if (error) {
 			revertHypothesis();
-		error = false;
-
-		runHypothesis();
+			error = false;
+		} else {
+			runHypothesis();
+		}
 	}
 
 	return 0;
