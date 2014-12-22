@@ -43,6 +43,7 @@ Stack stack[MAX_STACK];
 int stackDepth = 0;
 bool error = false;
 bool debug = false;
+bool timeOnly = true;
 
 /***********************************************************************/
 /* Input / output methods */
@@ -281,7 +282,8 @@ int main(int argc, char **argv)
 	bool solved;
 	
 	gridInput(argv[1]);
-	gridOutput();
+	if(!timeOnly)
+		gridOutput();
 
 	//Try to solve the problem after each hypothesis (or none if Sudoku is simple)
 	clock_t start = clock();
@@ -322,8 +324,13 @@ int main(int argc, char **argv)
 		
 		if (solved) {
 			clock_t stop = clock();
-			printf("Sudoku solved in %lu us: \n", (1000000*(stop-start))/CLOCKS_PER_SEC);
-			gridOutput();
+			unsigned long duration = (1000000*(stop-start))/CLOCKS_PER_SEC;
+			if (timeOnly) {
+				printf("%lu\n", duration);
+			} else {
+				printf("Sudoku solved in %lu us: \n", duration);
+				gridOutput();
+			}
 			break;
 		} else if (!error && debug) {
 			printf("Pass %d is not sufficient, need hypothesis ...\nCurrent state is:\n", stackDepth+1);
