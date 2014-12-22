@@ -10,14 +10,14 @@
 //Increasing these parameters increase the power of the solver up to a certain point and at a certain computation cost
 #define FORCE 3
 #define MAX_ITER 3
-#define MAX_STACK 4
+#define MAX_STACK 5
 
 
 /***********************************************************************/
 /* Data types */
 typedef struct CellTag {
-	int values[SIZE];
-	int nbValues;
+	unsigned int values; //Bitmap of possible values
+	unsigned int nbValues;
 } Cell;
 
 
@@ -25,7 +25,7 @@ typedef struct StackTag {
 	Cell cells[SIZE][SIZE];
 	int i;
 	int j;
-	int choice;
+	unsigned int choice;
 } Stack;
 
 
@@ -51,18 +51,18 @@ bool timeOnly = true;
 void gridInput(char *filename)
 {
 	FILE *file = fopen(filename, "r");
-	const int initialValues[SIZE] = {1,2,3,4,5,6,7,8,9};
+	const unsigned int initialValues = (1<<SIZE)-1;
 	int i,j;
 	for (i=0; i < SIZE; i++) {
 		for (j=0; j < SIZE; j++) {
 			char value;
 			fscanf(file, "%c ", &value);
 			if (value=='x' || value=='0') {
-				memcpy(cells[i][j].values, initialValues, sizeof(initialValues));
+				cells[i][j].values = initialValues;
 				cells[i][j].nbValues = SIZE;
 			} else if (value>'0' && value<='9') {
-				cells[i][j].values[0] = value - '0';
-				cells[i][j].nbValues =1;
+				cells[i][j].values = 1<<((value - '0')-1);
+				cells[i][j].nbValues = 1;
 			} else {
 				printf("Unrecognized character at psoition (%d,%d) : %c\n", i, j, value);
 			}
@@ -78,7 +78,13 @@ void gridOutput(void)
 	for (i=0; i < SIZE; i++) {
 		for (j=0; j < SIZE; j++) {
 			if (cells[i][j].nbValues==1) {
-				printf("%4d ", cells[i][j].values[0]);
+				unsigned int bitmap = cells[i][j].values;
+				int value=0;
+				while (bitmap) {
+					value++;
+					bitmap>>=1;
+				}
+				printf("%4d ", value);
 			} else {
 				printf("x(%1d) ", cells[i][j].nbValues);
 			}
@@ -91,36 +97,22 @@ void gridOutput(void)
 /***********************************************************************/
 /* Utilities to handle set of values */
 
-bool removeValueFromCell(Cell *cell, int value)
+bool removeValueFromCell(Cell *cell, unsigned int valueBmp)
 {
 	int i;
-	for (i=0; i<cell->nbValues; i++) {
-		if (cell->values[i] == value) {
-			memmove(&(cell->values[i]), &(cell->values[i+1]), (cell->nbValues-i-1)*sizeof(cell->values[0]));
-			cell->nbValues--;
-			if (!cell->nbValues) {
-				error=true;
-			}
-			return true;
-		}
-	}
-	return false;
+	unsigned int prev=cell->values;
+	cell->values &= ~(valueBmp);
+	unsigned int diff = prev ^ cell->values;
+	cell->nbValues -= __builtin_popcount(diff);
+	if (cell->nbValues <= 0)
+		error = true;	
+	return (diff!=0);
 }
 
 
 bool isEqual(Cell *a, Cell *b)
 {
-	//Values should be ordered so we can speed up the process
-	bool equal = true;
-	int i,j=0;
-	if (a->nbValues != b->nbValues)
-		return false;
-	for (i=0; i<a->nbValues; i++) {
-		equal = equal && (a->values[i] == b->values[i]);
-		if(!equal)
-			break;
-	}
-	return equal;
+	return (a->values == b->values);
 }
 
 bool isSolved(void)
@@ -186,10 +178,8 @@ bool analyseSet(Set *set, int nbElem)
 				if (isCandidate)
 					continue;
 				//Prune other cells
-				for (j=0; j<candidates[0]->nbValues; j++) {
-					bool effect = removeValueFromCell(set->cells[i], candidates[0]->values[j]);
-					efficient = efficient || effect;
-				}
+				bool effect = removeValueFromCell(set->cells[i], candidates[0]->values);
+				efficient = effect || efficient;
 			}
 		} 
 	} while (matching);
@@ -208,13 +198,18 @@ void runHypothesis(void)
 	for (i=0; i < SIZE; i++) {
 		for (j=0; j < SIZE; j++) {
 			if (cells[i][j].nbValues == 2) {
-				cells[i][j].nbValues=1;
+				//Found first value and remove it
+				int order = 0;
+				while (!((1<<order) & (cells[i][j].values)))
+					order++;
+				removeValueFromCell(&cells[i][j], 1<<order);
+				//Remember this choice in stack
 				stack[stackDepth].i = i;
 				stack[stackDepth].j = j;
-				stack[stackDepth].choice = cells[i][j].values[0];
+				stack[stackDepth].choice = cells[i][j].values;
 				stackDepth++;
 				if (debug)
-					printf("Hypothesis : (%d,%d) takes value %d\n", i,j,cells[i][j].values[0]);
+					printf("Hypothesis : (%d,%d) takes value 0x%x (%d)\n", i,j,cells[i][j].values, cells[i][j].nbValues);
 				return;
 			}
 		}
@@ -230,7 +225,7 @@ void revertHypothesis(void)
 	memcpy(cells, &stack[stackDepth].cells, sizeof(cells));
 	int i = stack[stackDepth].i;
 	int j = stack[stackDepth].j;
-	int choice = stack[stackDepth].choice;
+	unsigned int choice = stack[stackDepth].choice;
 	if (debug)
 		printf("Hypothesis is wrong, take other path ...\n");
 	removeValueFromCell(&cells[i][j], choice);
