@@ -9,7 +9,7 @@
 //Increasing these parameters increase the power of the solver up to a certain point and at a certain computation cost
 #define FORCE 3
 #define MAX_ITER 3
-#define MAX_STACK 2
+#define MAX_STACK 4
 
 
 /***********************************************************************/
@@ -332,6 +332,10 @@ int main(int argc, char **argv)
 		} else {
 			runHypothesis();
 		}
+	}
+
+	if (!solved) {
+		printf("Solver is not strong enough :(\nTry to increase the FORCE, MAX_ITER or MAX_SIZE value!\n");
 	}
 
 	return 0;
