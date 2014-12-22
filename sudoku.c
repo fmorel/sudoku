@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <time.h>
 
 //Sudoku size. SIZE = SMALL_SIZE*SMALL_SIZE
 #define SIZE 9
@@ -41,6 +42,7 @@ Cell cells[SIZE][SIZE];
 Stack stack[MAX_STACK];
 int stackDepth = 0;
 bool error = false;
+bool debug = false;
 
 /***********************************************************************/
 /* Input / output methods */
@@ -210,7 +212,8 @@ void runHypothesis(void)
 				stack[stackDepth].j = j;
 				stack[stackDepth].choice = cells[i][j].values[0];
 				stackDepth++;
-				printf("Hypothesis : (%d,%d) takes value %d\n", i,j,cells[i][j].values[0]);
+				if (debug)
+					printf("Hypothesis : (%d,%d) takes value %d\n", i,j,cells[i][j].values[0]);
 				return;
 			}
 		}
@@ -227,8 +230,8 @@ void revertHypothesis(void)
 	int i = stack[stackDepth].i;
 	int j = stack[stackDepth].j;
 	int choice = stack[stackDepth].choice;
-
-	printf("Hypothesis is wrong, take other path ...\n");
+	if (debug)
+		printf("Hypothesis is wrong, take other path ...\n");
 	removeValueFromCell(&cells[i][j], choice);
 }
 
@@ -274,13 +277,14 @@ void extractSquare(Set *set, int idx)
 
 int main(int argc, char **argv)
 {
+	Set currentSet;
+	bool solved;
+	
 	gridInput(argv[1]);
 	gridOutput();
 
-	Set currentSet;
-	bool solved;
-
 	//Try to solve the problem after each hypothesis (or none if Sudoku is simple)
+	clock_t start = clock();
 	while(stackDepth < MAX_STACK) {
 		int iter=0;
 		//Base iterations
@@ -317,10 +321,11 @@ int main(int argc, char **argv)
 		} while (iter < MAX_ITER && !solved && !error); 
 		
 		if (solved) {
-			printf("Sudoku solved : \n");
+			clock_t stop = clock();
+			printf("Sudoku solved in %lu us: \n", (1000000*(stop-start))/CLOCKS_PER_SEC);
 			gridOutput();
 			break;
-		} else if (!error) {
+		} else if (!error && debug) {
 			printf("Pass %d is not sufficient, need hypothesis ...\nCurrent state is:\n", stackDepth+1);
 			gridOutput();
 		}
