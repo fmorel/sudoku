@@ -41,6 +41,11 @@ Cell cells[SIZE][SIZE];
 
 Stack stack[MAX_STACK];
 int stackDepth = 0;
+
+Set rows[SIZE];
+Set columns[SIZE];
+Set squares[SIZE];
+
 bool error = false;
 bool debug = false;
 bool timeOnly = true;
@@ -123,6 +128,8 @@ bool isSolved(void)
 	for (i=0; i < SIZE; i++) {
 		for (j=0; j < SIZE; j++) {
 			solved = solved && (cells[i][j].nbValues == 1);
+			if(!solved)
+				break;
 		}
 	}
 	return solved;
@@ -199,9 +206,9 @@ void runHypothesis(void)
 		for (j=0; j < SIZE; j++) {
 			if (cells[i][j].nbValues == 2) {
 				//Found first value and remove it
-				int order = 0;
+				int order = SIZE-1;
 				while (!((1<<order) & (cells[i][j].values)))
-					order++;
+					order--;
 				removeValueFromCell(&cells[i][j], 1<<order);
 				//Remember this choice in stack
 				stack[stackDepth].i = i;
@@ -234,7 +241,6 @@ void revertHypothesis(void)
 
 /***********************************************************************/
 /* Extraction of the base subsets of a sudoku (row, column and square) */
-
 void extractRow(Set *set, int idx)
 {
 	int i;
@@ -267,21 +273,32 @@ void extractSquare(Set *set, int idx)
 	set->nbCells = SIZE;
 }
 
+void prepareSets(void)
+{
+	int i;
+	for (i=0; i < SIZE; i++) {
+		extractRow(&rows[i], i);
+		extractColumn(&columns[i], i);
+		extractSquare(&squares[i], i);
+	}
+}
 
 /***********************************************************************/
 /* Main functions handling the different passes */
 
 int main(int argc, char **argv)
 {
-	Set currentSet;
 	bool solved;
 	
 	gridInput(argv[1]);
 	if(!timeOnly)
 		gridOutput();
 
-	//Try to solve the problem after each hypothesis (or none if Sudoku is simple)
 	clock_t start = clock();
+	
+	prepareSets();
+
+	//Try to solve the problem after each hypothesis (or none if Sudoku is simple)
 	while(stackDepth < MAX_STACK) {
 		int iter=0;
 		//Base iterations
@@ -298,16 +315,13 @@ int main(int argc, char **argv)
 					int i;
 					//Elementary passes over the indexed subset
 					for (i=0; i < SIZE; i++) {
-						extractRow(&currentSet, i);
-						effect = analyseSet(&currentSet, force);	
+						effect = analyseSet(&rows[i], force);	
 						efficient = efficient || effect;
 
-						extractColumn(&currentSet, i);
-						effect = analyseSet(&currentSet, force);	
+						effect = analyseSet(&columns[i], force);	
 						efficient = efficient || effect;
 
-						extractSquare(&currentSet, i);
-						effect = analyseSet(&currentSet, force);	
+						effect = analyseSet(&squares[i], force);	
 						efficient = efficient || effect;
 
 						solved = isSolved();
