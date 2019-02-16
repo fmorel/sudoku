@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
+#include <stdint.h>
 
 //Sudoku size. SIZE = SMALL_SIZE*SMALL_SIZE
 #define SIZE 9
@@ -16,8 +17,8 @@
 /***********************************************************************/
 /* Data types */
 typedef struct CellTag {
-	unsigned int values; //Bitmap of possible values
-	unsigned int nbValues;
+	uint16_t values; //Bitmap of possible values
+	uint16_t nbValues;
 } Cell;
 
 
@@ -56,7 +57,7 @@ bool timeOnly = true;
 void gridInput(char *filename)
 {
 	FILE *file = fopen(filename, "r");
-	const unsigned int initialValues = (1<<SIZE)-1;
+	const uint16_t initialValues = (1<<SIZE)-1;
 	int i,j;
 	for (i=0; i < SIZE; i++) {
 		for (j=0; j < SIZE; j++) {
@@ -69,7 +70,7 @@ void gridInput(char *filename)
 				cells[i][j].values = 1<<((value - '0')-1);
 				cells[i][j].nbValues = 1;
 			} else {
-				printf("Unrecognized character at psoition (%d,%d) : %c\n", i, j, value);
+				printf("Unrecognized character at position (%d,%d) : %c\n", i, j, value);
 			}
 		}
 		fscanf(file, "\n");
@@ -83,12 +84,7 @@ void gridOutput(void)
 	for (i=0; i < SIZE; i++) {
 		for (j=0; j < SIZE; j++) {
 			if (cells[i][j].nbValues==1) {
-				unsigned int bitmap = cells[i][j].values;
-				int value=0;
-				while (bitmap) {
-					value++;
-					bitmap>>=1;
-				}
+				int value = __builtin_ffs(cells[i][j].values);
 				printf("%4d ", value);
 			} else {
 				printf("x(%1d) ", cells[i][j].nbValues);
@@ -102,12 +98,12 @@ void gridOutput(void)
 /***********************************************************************/
 /* Utilities to handle set of values */
 
-bool removeValueFromCell(Cell *cell, unsigned int valueBmp)
+bool removeValueFromCell(Cell *cell, uint16_t valueBmp)
 {
 	int i;
-	unsigned int prev=cell->values;
+	uint16_t prev=cell->values;
 	cell->values &= ~(valueBmp);
-	unsigned int diff = prev ^ cell->values;
+	uint16_t diff = prev ^ cell->values;
 	cell->nbValues -= __builtin_popcount(diff);
 	if (cell->nbValues <= 0)
 		error = true;	
