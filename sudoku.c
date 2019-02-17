@@ -10,9 +10,6 @@
 #define SIZE 9
 #define SMALL_SIZE 3
 
-//Increasing these parameters increase the power of the solver up to a certain point and at a certain computation cost
-#define FORCE 3
-#define MAX_ITER 3
 #define MAX_STACK 5
 
 typedef enum {
@@ -33,8 +30,8 @@ DifficultySettings settings[DIFF_QTY] =
 {
     {1, 4, 1},
     {2, 3, 2},
-    {3, 3, 3},
-    {3, 3, 5}
+    {3, 2, 3},
+    {3, 2, 5}
 };
 
 typedef struct {
@@ -47,13 +44,13 @@ typedef struct {
 
 /***********************************************************************/
 /* Data types */
-typedef struct CellTag {
+typedef struct {
     uint16_t values; //Bitmap of possible values
     uint16_t nbValues;
 } Cell;
 
 
-typedef struct StackTag {
+typedef struct {
     Cell cells[SIZE][SIZE];
     int i;
     int j;
@@ -61,33 +58,32 @@ typedef struct StackTag {
 } Stack;
 
 
-typedef struct SetTag {
+typedef struct {
     Cell *cells[SIZE];
     int nbCells;
 } Set;
 
 
-/* Global variables */
+/* Global state */
+typedef struct {
+    Cell cells[SIZE][SIZE];
+    Stack stack[MAX_STACK];
+    int stackDepth;
 
-Cell cells[SIZE][SIZE];
+    Set rows[SIZE];
+    Set columns[SIZE];
+    Set squares[SIZE];
 
-Stack stack[MAX_STACK];
-int stackDepth = 0;
-
-Set rows[SIZE];
-Set columns[SIZE];
-Set squares[SIZE];
-
-bool error = false;
-bool debug = false;
-bool timeOnly = true;
+    bool error;
+    Args *args;
+} State;
 
 /***********************************************************************/
 /* Input / output methods */
 
-void gridInput(char *filename)
+void gridInput(State *s)
 {
-    FILE *file = fopen(filename, "r");
+    FILE *file = fopen(s->args->filename, "r");
     const uint16_t initialValues = (1<<SIZE)-1;
     int i,j;
     for (i=0; i < SIZE; i++) {
@@ -95,11 +91,11 @@ void gridInput(char *filename)
             char value;
             fscanf(file, "%c ", &value);
             if (value=='x' || value=='0') {
-                cells[i][j].values = initialValues;
-                cells[i][j].nbValues = SIZE;
+                s->cells[i][j].values = initialValues;
+                s->cells[i][j].nbValues = SIZE;
             } else if (value>'0' && value<='9') {
-                cells[i][j].values = 1<<((value - '0')-1);
-                cells[i][j].nbValues = 1;
+                s->cells[i][j].values = 1<<((value - '0')-1);
+                s->cells[i][j].nbValues = 1;
             } else {
                 printf("Unrecognized character at position (%d,%d) : %c\n", i, j, value);
             }
@@ -109,16 +105,16 @@ void gridInput(char *filename)
     fclose(file);
 }
 
-void gridOutput(void)
+void gridOutput(State *s)
 {
     int i,j;
     for (i=0; i < SIZE; i++) {
         for (j=0; j < SIZE; j++) {
-            if (cells[i][j].nbValues==1) {
-                int value = __builtin_ffs(cells[i][j].values);
+            if (s->cells[i][j].nbValues==1) {
+                int value = __builtin_ffs(s->cells[i][j].values);
                 printf("%4d ", value);
             } else {
-                printf("x(%1d) ", cells[i][j].nbValues);
+                printf("x(%1d) ", s->cells[i][j].nbValues);
             }
         }
         printf("\n");
@@ -129,7 +125,7 @@ void gridOutput(void)
 /***********************************************************************/
 /* Utilities to handle set of values */
 
-bool removeValueFromCell(Cell *cell, uint16_t valueBmp)
+bool removeValueFromCell(State *s, Cell *cell, uint16_t valueBmp)
 {
     int i;
     uint16_t prev=cell->values;
@@ -137,7 +133,7 @@ bool removeValueFromCell(Cell *cell, uint16_t valueBmp)
     uint16_t diff = prev ^ cell->values;
     cell->nbValues -= __builtin_popcount(diff);
     if (cell->nbValues <= 0)
-        error = true;	
+        s->error = true;	
     return (diff!=0);
 }
 
@@ -147,14 +143,14 @@ bool isEqual(Cell *a, Cell *b)
     return (a->values == b->values);
 }
 
-bool isSolved(void)
+bool isSolved(State *s)
 {
     int i,j;
     bool solved = true;
 
     for (i=0; i < SIZE; i++) {
         for (j=0; j < SIZE; j++) {
-            solved = solved && (cells[i][j].nbValues == 1);
+            solved = solved && (s->cells[i][j].nbValues == 1);
             if(!solved)
                 break;
         }
@@ -169,7 +165,7 @@ bool isSolved(void)
 /* If a set of N value is exactly contained in N cells, these N values shall be removed from all other cells from the set */
 /* When N=1, it is the basic exclusion principle when a cell already contains a unique value */
 
-bool analyseSet(Set *set, int nbElem)
+bool analyseSet(State *s, Set *set, int nbElem)
 {
     Cell *candidates[SIZE];
     int i,j, matching;
@@ -212,7 +208,7 @@ bool analyseSet(Set *set, int nbElem)
                 if (isCandidate)
                     continue;
                 //Prune other cells
-                bool effect = removeValueFromCell(set->cells[i], candidates[0]->values);
+                bool effect = removeValueFromCell(s, set->cells[i], candidates[0]->values);
                 efficient = effect || efficient;
             }
         } 
@@ -225,23 +221,23 @@ bool analyseSet(Set *set, int nbElem)
 /* Hypothesis related code */
 
 /* For now, a path is taken when a cell alternates between 2 possiblities (nearly always the case after a first pass)*/
-void runHypothesis(void)
+void runHypothesis(State *s)
 {
     int i,j;
-    memcpy(&stack[stackDepth].cells, cells, sizeof(cells));
+    memcpy(&s->stack[s->stackDepth].cells, s->cells, sizeof(s->cells));
     for (i=0; i < SIZE; i++) {
         for (j=0; j < SIZE; j++) {
-            if (cells[i][j].nbValues == 2) {
+            Cell *c = &s->cells[i][j];
+            if (c->nbValues == 2) {
                 //Will clear the lowest bit
-                cells[i][j].values &= cells[i][j].values - 1;
-                cells[i][j].nbValues = 1;
+                c->values &= c->values - 1;
+                c->nbValues = 1;
                 //Remember this choice in stack
-                stack[stackDepth].i = i;
-                stack[stackDepth].j = j;
-                stack[stackDepth].choice = cells[i][j].values;
-                stackDepth++;
-                if (debug)
-                    printf("Hypothesis : (%d,%d) takes value 0x%x (%d)\n", i, j, cells[i][j].values, cells[i][j].nbValues);
+                s->stack[s->stackDepth].i = i;
+                s->stack[s->stackDepth].j = j;
+                s->stack[s->stackDepth++].choice = c->values;
+                if (s->args->verbose)
+                    printf("Hypothesis : (%d,%d) takes value 0x%x (%d)\n", i, j, s->cells[i][j].values, s->cells[i][j].nbValues);
                 return;
             }
         }
@@ -251,60 +247,60 @@ void runHypothesis(void)
 
 /* If the hypothesis proves wrong, choose the alternative option */
 
-void revertHypothesis(void)
+void revertHypothesis(State *s)
 {
-    stackDepth--;
-    memcpy(cells, &stack[stackDepth].cells, sizeof(cells));
-    int i = stack[stackDepth].i;
-    int j = stack[stackDepth].j;
-    unsigned int choice = stack[stackDepth].choice;
-    if (debug)
+    s->stackDepth--;
+    memcpy(s->cells, &s->stack[s->stackDepth].cells, sizeof(s->cells));
+    int i = s->stack[s->stackDepth].i;
+    int j = s->stack[s->stackDepth].j;
+    unsigned int choice = s->stack[s->stackDepth].choice;
+    if (s->args->verbose)
         printf("Hypothesis is wrong, take other path ...\n");
-    removeValueFromCell(&cells[i][j], choice);
+    removeValueFromCell(s, &s->cells[i][j], choice);
 }
 
 
 /***********************************************************************/
 /* Extraction of the base subsets of a sudoku (row, column and square) */
-void extractRow(Set *set, int idx)
+void extractRow(State *s, Set *set, int idx)
 {
     int i;
     for (i=0; i < SIZE; i++) {
-        set->cells[i] = &cells[idx][i];
+        set->cells[i] = &s->cells[idx][i];
     }
     set->nbCells=SIZE;
 }
 
-void extractColumn(Set *set, int idx)
+void extractColumn(State *s, Set *set, int idx)
 {
     int i;
     for (i=0; i < SIZE; i++) {
-        set->cells[i] = &cells[i][idx];
+        set->cells[i] = &s->cells[i][idx];
     }
     set->nbCells=SIZE;
 }
 
-void extractSquare(Set *set, int idx)
+void extractSquare(State *s, Set *set, int idx)
 {
     int i,j,k=0;
     int baseRow=(idx/SMALL_SIZE)*SMALL_SIZE;
     int baseColumn=(idx%SMALL_SIZE)*SMALL_SIZE;
     for (i=0; i < SMALL_SIZE; i++) {
         for (j=0; j < SMALL_SIZE;j++) {
-            set->cells[k] = &cells[baseRow+i][baseColumn+j];
+            set->cells[k] = &s->cells[baseRow+i][baseColumn+j];
             k++;
         }
     }
     set->nbCells = SIZE;
 }
 
-void prepareSets(void)
+void prepareSets(State *s)
 {
     int i;
     for (i=0; i < SIZE; i++) {
-        extractRow(&rows[i], i);
-        extractColumn(&columns[i], i);
-        extractSquare(&squares[i], i);
+        extractRow(s, &s->rows[i], i);
+        extractColumn(s, &s->columns[i], i);
+        extractSquare(s, &s->squares[i], i);
     }
 }
 
@@ -313,20 +309,22 @@ int solve(Args *args)
 {
     bool solved;
     const DifficultySettings *setting = &settings[args->level];
+    State *s = calloc(1, sizeof(State));
 
-    gridInput(args->filename);
+    s->args = args;
+    gridInput(s);
     if (args->verbose) {
         printf("Input grid is \n");
-        gridOutput();
+        gridOutput(s);
         printf("Difficulty level is %d\n", args->level);
     }
 
     clock_t start = clock();
 
-    prepareSets();
+    prepareSets(s);
 
     //Try to solve the problem after each hypothesis (or none if Sudoku is simple)
-    while(stackDepth < setting->maxStack) {
+    while(s->stackDepth < setting->maxStack) {
         int iter=0;
         //Base iterations
         do {
@@ -342,46 +340,48 @@ int solve(Args *args)
                     int i;
                     //Elementary passes over the indexed subset
                     for (i=0; i < SIZE; i++) {
-                        effect = analyseSet(&rows[i], force);	
+                        effect = analyseSet(s, &s->rows[i], force);	
                         efficient = efficient || effect;
 
-                        effect = analyseSet(&columns[i], force);	
+                        effect = analyseSet(s, &s->columns[i], force);	
                         efficient = efficient || effect;
 
-                        effect = analyseSet(&squares[i], force);	
+                        effect = analyseSet(s, &s->squares[i], force);	
                         efficient = efficient || effect;
 
-                        solved = isSolved();
+                        solved = isSolved(s);
                     }
-                } while (efficient && !solved && !error);
+                } while (efficient && !solved && !s->error);
                 force++;
-            } while (force < setting->force && !solved && !error);
-        } while (iter < setting->maxIter && !solved && !error); 
+            } while (force < setting->force && !solved && !s->error);
+        } while (iter < setting->maxIter && !solved && !s->error); 
 
         if (solved) {
             clock_t stop = clock();
             unsigned long duration = (1000000*(stop-start))/CLOCKS_PER_SEC;
             printf("Sudoku solved in %lu us: \n", duration);
-            gridOutput();
+            gridOutput(s);
             break;
-        } else if (!error && args->verbose) {
-            printf("Pass %d is not sufficient, need hypothesis ...\nCurrent state is:\n", stackDepth+1);
-            gridOutput();
+        } else if (!s->error && args->verbose) {
+            printf("Pass %d is not sufficient, need hypothesis ...\nCurrent state is:\n", s->stackDepth+1);
+            gridOutput(s);
         }
 
         //Hypothesis
-        if (error) {
-            revertHypothesis();
-            error = false;
+        if (s->error) {
+            revertHypothesis(s);
+            s->error = false;
         } else {
-            runHypothesis();
+            runHypothesis(s);
         }
     }
 
     if (!solved) {
         printf("Solver is not strong enough :(\nTry to increase the level of the solver (was %d)\n", args->level);
+        gridOutput(s);
     }
-
+    
+    free(s);
     return 0;
 }
 
