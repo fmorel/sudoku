@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <time.h>
 #include <stdint.h>
+#include <argp.h>
 
 //Sudoku size. SIZE = SMALL_SIZE*SMALL_SIZE
 #define SIZE 9
@@ -13,6 +15,35 @@
 #define MAX_ITER 3
 #define MAX_STACK 5
 
+typedef enum {
+    DIFF_EASY,
+    DIFF_MEDIUM,
+    DIFF_HARD,
+    DIFF_EXPERT,
+    DIFF_QTY
+} DifficultyLevel;
+
+typedef struct {
+    int force;
+    int maxIter;
+    int maxStack;
+} DifficultySettings;
+
+DifficultySettings settings[DIFF_QTY] = 
+{
+    {1, 4, 1},
+    {2, 3, 2},
+    {3, 3, 3},
+    {3, 3, 5}
+};
+
+typedef struct {
+    char *filename;
+    bool verbose;
+    bool solve;
+    bool generate;
+    int level;
+} Args;
 
 /***********************************************************************/
 /* Data types */
@@ -201,18 +232,16 @@ void runHypothesis(void)
 	for (i=0; i < SIZE; i++) {
 		for (j=0; j < SIZE; j++) {
 			if (cells[i][j].nbValues == 2) {
-				//Found first value and remove it
-				int order = SIZE-1;
-				while (!((1<<order) & (cells[i][j].values)))
-					order--;
-				removeValueFromCell(&cells[i][j], 1<<order);
+                                //Will clear the lowest bit
+                                cells[i][j].values &= cells[i][j].values - 1;
+                                cells[i][j].nbValues = 1;
 				//Remember this choice in stack
 				stack[stackDepth].i = i;
 				stack[stackDepth].j = j;
 				stack[stackDepth].choice = cells[i][j].values;
 				stackDepth++;
 				if (debug)
-					printf("Hypothesis : (%d,%d) takes value 0x%x (%d)\n", i,j,cells[i][j].values, cells[i][j].nbValues);
+					printf("Hypothesis : (%d,%d) takes value 0x%x (%d)\n", i, j, cells[i][j].values, cells[i][j].nbValues);
 				return;
 			}
 		}
@@ -279,23 +308,25 @@ void prepareSets(void)
 	}
 }
 
-/***********************************************************************/
-/* Main functions handling the different passes */
-
-int main(int argc, char **argv)
+/* Solver itself */
+int solve(Args *args)
 {
 	bool solved;
+        const DifficultySettings *setting = &settings[args->level];
 	
-	gridInput(argv[1]);
-	if(!timeOnly)
-		gridOutput();
+	gridInput(args->filename);
+	if (args->verbose) {
+            printf("Input grid is \n");
+	    gridOutput();
+            printf("Difficulty level is %d\n", args->level);
+        }
 
 	clock_t start = clock();
 	
 	prepareSets();
 
 	//Try to solve the problem after each hypothesis (or none if Sudoku is simple)
-	while(stackDepth < MAX_STACK) {
+	while(stackDepth < setting->maxStack) {
 		int iter=0;
 		//Base iterations
 		do {
@@ -324,20 +355,16 @@ int main(int argc, char **argv)
 					}
 				} while (efficient && !solved && !error);
 				force++;
-			} while (force<FORCE && !solved && !error);
-		} while (iter < MAX_ITER && !solved && !error); 
+			} while (force < setting->force && !solved && !error);
+		} while (iter < setting->maxIter && !solved && !error); 
 		
 		if (solved) {
 			clock_t stop = clock();
 			unsigned long duration = (1000000*(stop-start))/CLOCKS_PER_SEC;
-			if (timeOnly) {
-				printf("%lu\n", duration);
-			} else {
-				printf("Sudoku solved in %lu us: \n", duration);
-				gridOutput();
-			}
+                        printf("Sudoku solved in %lu us: \n", duration);
+                        gridOutput();
 			break;
-		} else if (!error && debug) {
+		} else if (!error && args->verbose) {
 			printf("Pass %d is not sufficient, need hypothesis ...\nCurrent state is:\n", stackDepth+1);
 			gridOutput();
 		}
@@ -352,9 +379,91 @@ int main(int argc, char **argv)
 	}
 
 	if (!solved) {
-		printf("Solver is not strong enough :(\nTry to increase the FORCE, MAX_ITER or MAX_SIZE value!\n");
+		printf("Solver is not strong enough :(\nTry to increase the level of the solver (was %d)\n", args->level);
 	}
 
 	return 0;
 }
+
+/* Argument handling */
+static char doc[] =
+  "Sudoku solver";
+
+/* The options we understand. */
+static struct argp_option options[] = {
+  {"solve",     's', "FILE",  0,  "Solve sudoku problem contained in FILE. Format is space separated digits or 'x' for blank cell.\n"
+                                   "Solution is printed on stdout. Cannot be used if 'generate' is selected." },
+  {"level",     'l', "LEVEL", 0,  "Limit sudoku solver/generator level (0: easy, 1 :medium, 2:hard, 3: expert). Default is 1"},
+  {"generate",  'g', "FILE",  0,  "Generate sudoku and store it in FILE. Cannot be used if 'solve' is selcted."},
+  {"verbose",   'v', 0,       0,  "Produce verbose information during sudoku solving." },
+  { 0 }
+};
+
+/* Used by main to communicate with parse_opt. */
+
+
+/* Parse a single option. */
+static error_t
+parse_opt (int key, char *arg, struct argp_state *state)
+{
+    Args *args = state->input;
+
+    switch (key)
+    {
+        case 's':
+            if (args->generate)
+                argp_usage(state);
+            args->solve = true;
+            args->filename = arg;
+            break;
+        case 'l':
+            args->level = atoi(arg);
+            if (args->level < 0 || args->level >= DIFF_QTY)
+                argp_usage(state);
+            break;
+        case 'g':
+            if (args->solve)
+                argp_usage(state);
+            args->generate = true;
+            args->filename = arg;
+            break;
+        case 'v':
+            args->verbose = true;
+            break;
+        case ARGP_KEY_END:
+            if (!args->generate && !args->solve)
+                argp_usage(state);
+            break;
+        default:
+            return ARGP_ERR_UNKNOWN;
+    }
+    return 0;
+}
+
+int
+main (int argc, char **argv)
+{
+    Args args;
+    struct argp argp = {options, parse_opt, NULL, doc, NULL, NULL, NULL};
+
+    memset(&args, 0, sizeof(Args));
+    args.level = 1;
+
+    /* Parse our args; every option seen by parse_opt will
+       be reflected in args. */
+    argp_parse (&argp, argc, argv, 0, 0, &args);
+    
+    if (args.solve) {
+        return solve(&args);
+    } 
+    if (args.generate) {
+        printf("Sudoku generation not developped yet\n");
+        return 0;
+    } 
+
+    //Should not happen
+    return -1;
+}
+
+
 
