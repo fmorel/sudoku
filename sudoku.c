@@ -197,8 +197,8 @@ bool analyseSet(State *s, Set *set, int nbElem)
             }
         }
 
-        if (matching==nbElem) {
-            for (i=0; i < set->nbCells; i++) {
+        if (matching == nbElem) {
+            for (i = 0; i < set->nbCells; i++) {
                 if (set->cells[i]->flag)
                     continue;
                 //Prune other cells
@@ -208,8 +208,8 @@ bool analyseSet(State *s, Set *set, int nbElem)
         } 
 
         //Reset flag
-        for (i=0; i < set->nbCells; i++) {
-            set->cells[i]->flag = false;
+        for (i = nextCandidate-1; i < n; i++) {
+            subset[i]->flag = false;
         }
     }
 
