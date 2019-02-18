@@ -47,6 +47,7 @@ typedef struct {
 typedef struct {
     uint16_t values; //Bitmap of possible values
     uint16_t nbValues;
+    bool flag;
 } Cell;
 
 
@@ -167,52 +168,50 @@ bool isSolved(State *s)
 
 bool analyseSet(State *s, Set *set, int nbElem)
 {
-    Cell *candidates[SIZE];
-    int i,j, matching;
+    Cell *candidate;
+    Cell *subset[SIZE];
+    int i,j, matching, n = 0;
     bool efficient = false;
-    int firstCandidate = -1;
+    int nextCandidate = 0;
 
-    do {
-        matching=0;
-        for (i=firstCandidate+1; i<set->nbCells; i++) {
-            if (set->cells[i]->nbValues == nbElem) {
-                if (matching) {
-                    //Check if the values are same as candidate
-                    if (isEqual(set->cells[i], candidates[0])) {
-                        candidates[matching] = set->cells[i];
-                        matching++;
-                    }
-                } else {
-                    //New candidate
-                    candidates[0] = set->cells[i];
-                    matching= 1;
-                    firstCandidate = i;
-                }
-                //We've found something here, leave and prune :
-                if (matching == nbElem) {
-                    break;
-                }
+    //Build subset of potential cells
+    for (i = 0; i < set->nbCells; i++) {
+        if (set->cells[i]->nbValues == nbElem)
+            subset[n++] = set->cells[i];
+    }
+
+    while ((n - nextCandidate) >= nbElem) {
+        candidate = subset[nextCandidate++];
+        candidate->flag = true;
+        matching = 1;
+
+        for (i = nextCandidate; i < n; i++) {
+            //Check if the values are same as candidate
+            if (isEqual(subset[i], candidate)) {
+                subset[i]->flag = true;
+                matching++;
+            }
+            //We've found something here, leave and prune :
+            if (matching == nbElem) {
+                break;
             }
         }
 
         if (matching==nbElem) {
             for (i=0; i < set->nbCells; i++) {
-                //Check it is not a candidate
-                bool isCandidate = false;
-                for (j=0; j<matching; j++) {
-                    if (set->cells[i] == candidates[j]) {
-                        isCandidate = true;
-                        break;
-                    }
-                }
-                if (isCandidate)
+                if (set->cells[i]->flag)
                     continue;
                 //Prune other cells
-                bool effect = removeValueFromCell(s, set->cells[i], candidates[0]->values);
+                bool effect = removeValueFromCell(s, set->cells[i], candidate->values);
                 efficient = effect || efficient;
             }
         } 
-    } while (matching);
+
+        //Reset flag
+        for (i=0; i < set->nbCells; i++) {
+            set->cells[i]->flag = false;
+        }
+    }
 
     return efficient;
 }
@@ -348,9 +347,8 @@ int solve(Args *args)
 
                         effect = analyseSet(s, &s->squares[i], force);	
                         efficient = efficient || effect;
-
-                        solved = isSolved(s);
                     }
+                    solved = isSolved(s);
                 } while (efficient && !solved && !s->error);
                 force++;
             } while (force < setting->force && !solved && !s->error);
@@ -385,6 +383,7 @@ int solve(Args *args)
     return 0;
 }
 
+
 /* Argument handling */
 static char doc[] =
 "Sudoku solver";
@@ -403,7 +402,7 @@ static struct argp_option options[] = {
 
 
 /* Parse a single option. */
-    static error_t
+static error_t
 parse_opt (int key, char *arg, struct argp_state *state)
 {
     Args *args = state->input;
@@ -440,8 +439,7 @@ parse_opt (int key, char *arg, struct argp_state *state)
     return 0;
 }
 
-    int
-main (int argc, char **argv)
+int main (int argc, char **argv)
 {
     Args args;
     struct argp argp = {options, parse_opt, NULL, doc, NULL, NULL, NULL};
