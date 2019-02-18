@@ -11,6 +11,7 @@
 #define SMALL_SIZE 3
 
 #define MAX_STACK 5
+#define MAX_COMB 2
 
 typedef enum {
     DIFF_EASY,
@@ -29,9 +30,9 @@ typedef struct {
 DifficultySettings settings[DIFF_QTY] = 
 {
     {1, 4, 1},
-    {2, 3, 2},
+    {2, 2, 2},
     {3, 2, 3},
-    {3, 2, 5}
+    {3, 2, 4}
 };
 
 typedef struct {
@@ -64,6 +65,10 @@ typedef struct {
     int nbCells;
 } Set;
 
+typedef struct {
+    uint16_t *bmp_array;
+    int size;
+} Comb;
 
 /* Global state */
 typedef struct {
@@ -75,6 +80,8 @@ typedef struct {
     Set columns[SIZE];
     Set squares[SIZE];
 
+    Comb comb[MAX_COMB];
+
     bool error;
     Args *args;
 } State;
@@ -85,6 +92,10 @@ typedef struct {
 void gridInput(State *s)
 {
     FILE *file = fopen(s->args->filename, "r");
+    if (!file) {
+        fprintf(stderr, "Could not open file %s\n", s->args->filename);
+        exit(1);
+    }
     const uint16_t initialValues = (1<<SIZE)-1;
     int i,j;
     for (i=0; i < SIZE; i++) {
@@ -142,6 +153,11 @@ bool removeValueFromCell(State *s, Cell *cell, uint16_t valueBmp)
 bool isEqual(Cell *a, Cell *b)
 {
     return (a->values == b->values);
+}
+
+bool isContained(uint16_t valueBmp, Cell *cell)
+{
+    return ((valueBmp & cell->values) == valueBmp);
 }
 
 bool isSolved(State *s)
@@ -216,6 +232,39 @@ bool analyseSet(State *s, Set *set, int nbElem)
     return efficient;
 }
 
+/* Synthesis : If a set of N value is contained only in N cells, then these cells shall contain only these values */
+/* When N=1, it is the basic existence principle : If a value can only be here, then it's here */
+bool synthesizeSet(State *s, Set *set, int nbElem)
+{
+    int i, j, k, n = 0;
+    bool efficient = false;
+    Cell *candidate[SIZE];
+
+    if (nbElem >= MAX_COMB)
+        return false;
+    
+    Comb *c = &s->comb[nbElem-1];
+
+    for (i = 0; i < c->size; i++) {
+        k = 0;
+        for (j = 0; j < set->nbCells; j++) {
+            if (isContained(c->bmp_array[i], set->cells[j])) {
+                candidate[k++] = set->cells[j];
+                if (k > nbElem)
+                    break;
+            }
+        }
+        if (k == nbElem) {
+            for (j = 0; j < k; j++) {
+                candidate[j]->values = c->bmp_array[i];
+                efficient = efficient || (candidate[j]->nbValues > nbElem);
+                candidate[j]->nbValues = nbElem;
+            }
+        }
+    }
+    return efficient;
+}
+
 /***********************************************************************/
 /* Hypothesis related code */
 
@@ -248,6 +297,11 @@ void runHypothesis(State *s)
 
 void revertHypothesis(State *s)
 {
+    if (s->stackDepth <= 0) {
+        fprintf(stderr, "Error !\n");
+        gridOutput(s);
+        exit(1);
+    }
     s->stackDepth--;
     memcpy(s->cells, &s->stack[s->stackDepth].cells, sizeof(s->cells));
     int i = s->stack[s->stackDepth].i;
@@ -303,6 +357,29 @@ void prepareSets(State *s)
     }
 }
 
+/* Creation of 'k among N' bitmap for synthesis */
+void createCombinations(State *s)
+{
+    int i, j, n = 0;
+    s->comb[0].bmp_array = malloc(SIZE * sizeof(uint16_t));
+    s->comb[1].bmp_array = malloc(((SIZE)*(SIZE-1)/2) * sizeof(uint16_t));
+    for (i = 0; i < SIZE; i++) {
+        s->comb[0].bmp_array[i] = (1<<i);
+        for (j = i+1; j < SIZE; j++) {
+            s->comb[1].bmp_array[n++] = (1<<i) | (1<<j);
+        }
+    }
+    s->comb[0].size = SIZE;
+    s->comb[1].size = n;
+}
+
+void state_free(State *s)
+{
+    free(s->comb[0].bmp_array);
+    free(s->comb[1].bmp_array);
+    free(s);
+}
+
 /* Solver itself */
 int solve(Args *args)
 {
@@ -318,9 +395,10 @@ int solve(Args *args)
         printf("Difficulty level is %d\n", args->level);
     }
 
-    clock_t start = clock();
-
     prepareSets(s);
+    createCombinations(s);
+    
+    clock_t start = clock();
 
     //Try to solve the problem after each hypothesis (or none if Sudoku is simple)
     while(s->stackDepth < setting->maxStack) {
@@ -341,11 +419,20 @@ int solve(Args *args)
                     for (i=0; i < SIZE; i++) {
                         effect = analyseSet(s, &s->rows[i], force);	
                         efficient = efficient || effect;
+                        
+                        effect = synthesizeSet(s, &s->rows[i], force);	
+                        efficient = efficient || effect;
 
                         effect = analyseSet(s, &s->columns[i], force);	
                         efficient = efficient || effect;
 
+                        effect = synthesizeSet(s, &s->columns[i], force);	
+                        efficient = efficient || effect;
+
                         effect = analyseSet(s, &s->squares[i], force);	
+                        efficient = efficient || effect;
+
+                        effect = synthesizeSet(s, &s->squares[i], force);	
                         efficient = efficient || effect;
                     }
                     solved = isSolved(s);
@@ -379,7 +466,7 @@ int solve(Args *args)
         gridOutput(s);
     }
     
-    free(s);
+    state_free(s);
     return 0;
 }
 
