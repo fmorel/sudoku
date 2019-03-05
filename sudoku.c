@@ -61,7 +61,6 @@ typedef struct {
 
 typedef struct {
     Cell *cells[SIZE];
-    int nbCells;
 } Set;
 
 
@@ -175,7 +174,7 @@ bool analyseSet(State *s, Set *set, int nbElem)
     int nextCandidate = 0;
 
     //Build subset of potential cells
-    for (i = 0; i < set->nbCells; i++) {
+    for (i = 0; i < SIZE; i++) {
         if (set->cells[i]->nbValues == nbElem)
             subset[n++] = set->cells[i];
     }
@@ -198,7 +197,7 @@ bool analyseSet(State *s, Set *set, int nbElem)
         }
 
         if (matching == nbElem) {
-            for (i = 0; i < set->nbCells; i++) {
+            for (i = 0; i < SIZE; i++) {
                 if (set->cells[i]->flag)
                     continue;
                 //Prune other cells
@@ -229,7 +228,7 @@ bool existenceSet(State *s, Set *set) {
     for (i = 0; i < SIZE; i++) {
         bmp = (1<<i);
         k = 0;
-        for (j = 0; j < set->nbCells; j++) {
+        for (j = 0; j < SIZE; j++) {
             if (bmp & set->cells[j]->values == bmp) {
                 candidate = set->cells[j];
                 k++;
@@ -297,7 +296,6 @@ void extractRow(State *s, Set *set, int idx)
     for (i=0; i < SIZE; i++) {
         set->cells[i] = &s->cells[idx][i];
     }
-    set->nbCells=SIZE;
 }
 
 void extractColumn(State *s, Set *set, int idx)
@@ -306,7 +304,6 @@ void extractColumn(State *s, Set *set, int idx)
     for (i=0; i < SIZE; i++) {
         set->cells[i] = &s->cells[i][idx];
     }
-    set->nbCells=SIZE;
 }
 
 void extractSquare(State *s, Set *set, int idx)
@@ -320,7 +317,6 @@ void extractSquare(State *s, Set *set, int idx)
             k++;
         }
     }
-    set->nbCells = SIZE;
 }
 
 void prepareSets(State *s)
