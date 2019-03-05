@@ -29,7 +29,7 @@ typedef struct {
 DifficultySettings settings[DIFF_QTY] = 
 {
     {1, 4, 1},
-    {2, 3, 2},
+    {2, 2, 2},
     {3, 2, 3},
     {3, 2, 5}
 };
@@ -216,6 +216,36 @@ bool analyseSet(State *s, Set *set, int nbElem)
     return efficient;
 }
 
+/* Make sure that if a value can only be in one place, then it's here (existence principle) */
+bool existenceSet(State *s, Set *set) {
+    int i,j,k;
+    int bmp;
+    Cell *candidate;
+    bool efficient = false;
+
+    // This seems inefficient : deactivate
+    return false;
+
+    for (i = 0; i < SIZE; i++) {
+        bmp = (1<<i);
+        k = 0;
+        for (j = 0; j < set->nbCells; j++) {
+            if (bmp & set->cells[j]->values == bmp) {
+                candidate = set->cells[j];
+                k++;
+            }
+            if (k > 1)
+                break;
+        }
+        if (k == 1) {
+            efficient = efficient || (candidate->nbValues > 1);
+            candidate->values = bmp;
+            candidate->nbValues = 1;
+        }
+    }
+
+    return efficient;
+}
 /***********************************************************************/
 /* Hypothesis related code */
 
@@ -340,12 +370,15 @@ int solve(Args *args)
                     //Elementary passes over the indexed subset
                     for (i=0; i < SIZE; i++) {
                         effect = analyseSet(s, &s->rows[i], force);	
+                        effect = existenceSet(s, &s->rows[i]) || effect;
                         efficient = efficient || effect;
 
                         effect = analyseSet(s, &s->columns[i], force);	
+                        effect = existenceSet(s, &s->columns[i]) || effect;
                         efficient = efficient || effect;
 
                         effect = analyseSet(s, &s->squares[i], force);	
+                        effect = existenceSet(s, &s->squares[i]) || effect;
                         efficient = efficient || effect;
                     }
                     solved = isSolved(s);
