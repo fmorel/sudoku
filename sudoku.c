@@ -42,6 +42,7 @@ typedef struct {
     int level;
 } Args;
 
+
 /***********************************************************************/
 /* Data types */
 typedef struct {
@@ -120,6 +121,7 @@ void gridOutput(State *s)
         printf("\n");
     }
 }
+
 
 
 /***********************************************************************/
@@ -412,6 +414,107 @@ int solve(Args *args)
     return 0;
 }
 
+/* Grid generation */
+void gridGenerateBase(State *s)
+{
+    int i, j, value;
+    /* Generate a base valid grid */
+    for (i = 0; i < SIZE; i++) {
+        for (j = 0; j < SIZE; j++) {
+            value = j + SMALL_SIZE*(i%SMALL_SIZE) + i/SMALL_SIZE;
+            value %= SIZE;
+            s->cells[i][j].values = (1 << value);
+            s->cells[i][j].nbValues = 1;
+        }
+    }
+}
+
+void gridPermuteDigits(State *s, int a, int b)
+{
+    int i, j; 
+    
+    if (a == b)
+        return;
+    
+    for (i = 0; i < SIZE; i++) {
+        for (j = 0; j < SIZE; j++) {
+            if (s->cells[i][j].values == (1 << a))
+                s->cells[i][j].values = (1 << b);
+            else if (s->cells[i][j].values == (1 << b))
+                s->cells[i][j].values = (1 << a);
+        }
+    }
+}
+
+void gridPermuteRows(State *s, int i, int j)
+{
+    Cell row[SIZE];
+    if (i == j)
+        return;
+    memcpy(row, s->cells[i], sizeof(row));
+    memcpy(s->cells[i], s->cells[j], sizeof(row));
+    memcpy(s->cells[j], row, sizeof(row));
+}
+
+void gridPermuteRowBlocks(State *s, int i, int j)
+{
+    Cell block[SMALL_SIZE][SIZE];
+
+    if (i == j)
+        return;
+    memcpy(block, &s->cells[i*3], sizeof(block));
+    memcpy(&s->cells[i*3], &s->cells[j*3], sizeof(block));
+    memcpy(&s->cells[j*3], block, sizeof(block));
+}
+
+void gridRotate(State *s)
+{
+    int i,j;
+    for (i = 0; i < SIZE; i++) {
+        for (j = 0; j < SIZE; j++) {
+            s->stack[0].cells[i][j] = s->cells[j][i];
+        }
+    }
+    memcpy(s->cells, s->stack[0].cells, sizeof(s->cells));
+}
+
+int generate(Args *args)
+{
+    const DifficultySettings *setting = &settings[args->level];
+    int iter, r, i, j, k;
+    
+    State *s = calloc(1, sizeof(State));
+    s->args = args;
+    
+    srand(time(NULL)); // randomize seed
+    
+    gridGenerateBase(s);
+    for (iter = 0; iter < 500; iter++) {
+        r = rand() % 100;
+        if (r < 15) {
+            i = rand() % SIZE;
+            j = rand() % SIZE;
+            gridPermuteDigits(s, i, j);
+        } else if (r < 45) {
+            i = rand() % SMALL_SIZE;
+            j = rand() % SMALL_SIZE;
+            k = rand() % SMALL_SIZE;
+            i += 3*k;
+            j += 3*k;
+            gridPermuteRows(s, i, j);
+        } else if (r < 75) {
+            i = rand() % SMALL_SIZE;
+            j = rand() % SMALL_SIZE;
+            gridPermuteRowBlocks(s, i, j);
+        } else {
+            gridRotate(s);
+        }
+    }
+    printf("Generated grid : \n");
+    gridOutput(s);
+
+    return 0;
+}
 
 /* Argument handling */
 static char doc[] =
@@ -484,8 +587,7 @@ int main (int argc, char **argv)
         return solve(&args);
     } 
     if (args.generate) {
-        printf("Sudoku generation not developped yet\n");
-        return 0;
+        return generate(&args);
     } 
 
     //Should not happen
